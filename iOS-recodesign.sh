@@ -43,6 +43,7 @@ mkdir "$resultDir"
 echo [INFO] $downurl
 curl -O -k ${downurl} || { echo "curl failed"; exit 1; }
 [[ -d "$packName" ]] && rm -rdf $packName
+echo [INFO]unzip $ipaname to $packName
 unzip -q $ipaname -d $packName
 applicationName=$(ls -1 "$packName/Payload" | grep ".*\.app$" | head -n1)
 ipa_swift_frameworks=`find ${packName}/Payload/${applicationName}/Frameworks/ -name "libswift*" 2> /dev/null || true`
@@ -62,18 +63,25 @@ python $currentDir/update-entitlements-data.py temp_${packName}_ENTITLEMENTS.pli
 rm -r ${packName}/Payload/${applicationName}/_CodeSignature
 /usr/libexec/PlistBuddy -c "Set CFBundleIdentifier ${bundleid}" ${packName}/Payload/${applicationName}/Info.plist 
 cp ${newMobileProfile} ${packName}/Payload/${applicationName}/embedded.mobileprovision
-ipa_plugins=`find ${packName}/Payload/${applicationName}/PlugIns -name "notificationService.appex" 2> /dev/null || true`
+ipa_plugins=`find ${packName}/Payload/${applicationName}/PlugIns -name "*.appex" 2> /dev/null || true`
 if [[ -n ${ipa_plugins} ]]; then
     for LINE in ${ipa_plugins}
     do
+        fullname=$(basename $LINE)
+        filename=$(echo $fullname | cut -d . -f1)
         identifier=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' $LINE/Info.plist)
-        pluginName=notificationService
+        #pluginName=notificationService
+        pluginName=$filename
+        if [ $pluginName == 'NotificationContent' ];then
+           pluginName=notificationContent
+        fi
         new_identifier="${bundleid}.${pluginName}"
         echo "new_identifier=$new_identifier"
         pluginMobileProfile=$(find ${HOME}/ProvisioningProfiles -name "*_${new_identifier}.mobileprovision")
         #pluginTeamName=$(/usr/libexec/PlistBuddy -c 'Print :TeamName' /dev/stdin <<< $(security cms -D -i "${pluginMobileProfile}"))
         #plugincodeSignIdentify="iPhone Distribution: $pluginTeamName"
         #echo "plugincodeSignIdentify=${plugincodeSignIdentify}"
+        echo "$pluginMobileProfile"
         /usr/libexec/PlistBuddy -x -c "print :Entitlements" /dev/stdin <<< $(security cms -D -i ${pluginMobileProfile}) > new_${pluginName}_ENTITLEMENTS.entitlements
         codesign -d --entitlements :- ${LINE} > temp_${pluginName}_ENTITLEMENTS.plist
         echo "rm $LINE/_CodeSignature"
